@@ -14,6 +14,8 @@ namespace AstronautPlayer
         public float speed = 6.0f;
         // 转向速度（角度/秒），配合差值运算控制转身的快慢
         public float turnSpeed = 180.0f;
+        // 跳跃速度
+        public float jumpSpeed = 28.0f;
         // 当前的移动向量（包含重力影响）
         private Vector3 moveDirection = Vector3.zero;
         // 重力加速度
@@ -27,7 +29,7 @@ namespace AstronautPlayer
         {
             // 获取物体上的组件引用
             controller = GetComponent<CharacterController>();
-            anim = gameObject.GetComponentInChildren<Animator>();
+			anim = gameObject.GetComponentInChildren<Animator>();
             // 获取当前活跃的键盘设备
             keyboard = Keyboard.current;
         }
@@ -47,15 +49,20 @@ namespace AstronautPlayer
                 if (keyboard.dKey.isPressed) h += 1;
             }
 
-            // 2. 处理动画
-            // 只要水平或垂直方向有输入（绝对值大于阈值），就认为在移动
-            // AnimationPar: 0 = Idle (待机), 1 = Run (跑动)
-            bool hasInput = (Mathf.Abs(h) > 0.1f || Mathf.Abs(v) > 0.1f);
-            anim.SetInteger("AnimationPar", hasInput ? 1 : 0);
+			// 2. 处理动画
+			// 只要水平或垂直方向有输入（绝对值大于阈值），就认为在移动
+			// AnimationPar: 0 = Idle (待机), 1 = Run (跑动)
+			bool hasInput = (Mathf.Abs(h) > 0.1f || Mathf.Abs(v) > 0.1f);
+			if (anim != null)
+            	anim.SetInteger("AnimationPar", hasInput ? 1 : 0);
 
             // 3. 处理移动逻辑 (仅在着地时可以改变移动方向)
             if (controller.isGrounded)
             {
+                // 重力重置：在地面上时，保持一个微小的向下速度，确保 isGrounded 判定稳定
+                // 注意：这里先设置默认的地面吸附力，后面计算移动时要保留这个 Y 值，除非发生跳跃
+                float currentY = -2f;
+
                 // --- 计算相对于相机的移动方向 ---
                 
                 // 获取相机方向（忽略Y轴，只保留在水平面上的分量，防止角色往天上飞或钻地）
@@ -97,12 +104,26 @@ namespace AstronautPlayer
 
                     // B. 移动：既然已经转向了目标方向，那就直接朝自己的前方移动
                     // 这样实现了“按 S -> 转身 -> 向前跑”的效果，而不是倒退
-                    moveDirection = transform.forward * speed;
+                    
+                    // 关键修正：这里只改变 X 和 Z，保留 Y 轴（重力/跳跃）
+                    Vector3 forwardMove = transform.forward * speed;
+                    moveDirection.x = forwardMove.x;
+                    moveDirection.z = forwardMove.z;
                 }
                 else
                 {
-                    // 没有输入时，水平速度归零（但保留 Y 轴重力，下面会处理）
-                    moveDirection = Vector3.zero;
+                    // 没有输入时，水平速度归零
+                    moveDirection.x = 0;
+                    moveDirection.z = 0;
+                }
+
+                // 应用地面吸附力（在这之前 Y 没有被移动逻辑覆盖）
+                moveDirection.y = currentY;
+
+                // --- 跳跃逻辑 ---
+                if (keyboard != null && keyboard.spaceKey.wasPressedThisFrame)
+                {
+                    moveDirection.y = jumpSpeed;
                 }
             }
 
@@ -112,7 +133,10 @@ namespace AstronautPlayer
             
             // 5. 最终应用移动
             // controller.Move 会自动处理与场景的碰撞，防止穿墙
-            controller.Move(moveDirection * Time.deltaTime);
+            if (controller != null && controller.enabled)
+            {
+                controller.Move(moveDirection * Time.deltaTime);
+            }
         }
     }
 }
