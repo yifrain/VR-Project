@@ -142,10 +142,64 @@ namespace Tutorial_5
             Vector3 finalPos = new Vector3(randX, spawnHeight, randZ);
 
             // Raycast to find exact ground height
+            Vector3 rayOrigin = new Vector3(randX, 500f, randZ);
+            Ray ray = new Ray(rayOrigin, Vector3.down);
             RaycastHit hit;
-            if (Physics.Raycast(new Vector3(randX, 500f, randZ), Vector3.down, out hit, 1000f))
+            bool hitFound = false;
+
+            // Priority 1: Use specific Terrain Collider if available (Ignores trees/other objects)
+            if (terrainObject != null)
             {
-                finalPos = hit.point + Vector3.up * spawnHeight;
+                Collider terrainCol = terrainObject.GetComponent<Collider>();
+                if (terrainCol != null)
+                {
+                    if (terrainCol.Raycast(ray, out hit, 1000f))
+                    {
+                        finalPos = hit.point + Vector3.up * spawnHeight;
+                        hitFound = true;
+                    }
+                }
+            }
+
+            // Priority 2: Global Raycast (if Priority 1 failed), but try to filter out trees
+            if (!hitFound)
+            {
+                // Use RaycastAll to get everything below
+                RaycastHit[] hits = Physics.RaycastAll(ray, 1000f);
+                if (hits.Length > 0)
+                {
+                    // Find the lowest point that is likely the ground
+                    // Or find the one named "Terrain"
+                    float lowestY = float.MaxValue;
+                    Vector3 bestPoint = Vector3.zero;
+                    bool foundGround = false;
+
+                    foreach (var h in hits)
+                    {
+                        // Check for common ground names or tags
+                        if (h.collider.gameObject.name.Contains("Terrain") || 
+                            h.collider.gameObject.name.Contains("Ground") ||
+                            h.collider.gameObject.name.Contains("Floor"))
+                        {
+                            finalPos = h.point + Vector3.up * spawnHeight;
+                            foundGround = true;
+                            break; 
+                        }
+
+                        // Track lowest point as fallback (trees are usually higher than ground)
+                        if (h.point.y < lowestY)
+                        {
+                            lowestY = h.point.y;
+                            bestPoint = h.point;
+                        }
+                    }
+
+                    if (!foundGround && hits.Length > 0)
+                    {
+                        // If no explicit ground found, use the lowest hit point
+                        finalPos = bestPoint + Vector3.up * spawnHeight;
+                    }
+                }
             }
 
             return finalPos;
